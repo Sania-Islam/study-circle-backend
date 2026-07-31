@@ -9,7 +9,6 @@ const uploadNote = async (req, res, next) => {
     const course = await Course.findById(req.params.id);
     if (!course) return res.status(404).json({ message: "Course not found" });
     if (!req.file) return res.status(400).json({ message: "No file was uploaded" });
-
     const uploadResult = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         { resource_type: "auto", folder: "studycircle-notes" },
@@ -17,7 +16,6 @@ const uploadNote = async (req, res, next) => {
       );
       stream.end(req.file.buffer);
     });
-
     const note = await Note.create({
       title: req.file.originalname,
       author: req.user.username,
@@ -27,7 +25,6 @@ const uploadNote = async (req, res, next) => {
       cloudinaryId: uploadResult.public_id,
       course: course._id,
     });
-
     const updatedUser = await recordUpload(req.user.username, 1);
     res.status(201).json({ note, streak: updatedUser?.currentStreak, notesUploaded: updatedUser?.notesUploaded });
   } catch (error) {
@@ -54,4 +51,24 @@ const downloadNote = async (req, res, next) => {
   }
 };
 
-module.exports = { uploadNote, getNotesForCourse, downloadNote };
+const deleteNote = async (req, res, next) => {
+  try {
+    const note = await Note.findById(req.params.id);
+    if (!note) return res.status(404).json({ message: "Note not found" });
+
+    if (req.user.role !== "admin" && req.user.username !== note.author) {
+      return res.status(403).json({ message: "You can only delete your own notes" });
+    }
+
+    if (note.cloudinaryId) {
+      await cloudinary.uploader.destroy(note.cloudinaryId).catch(() => {});
+    }
+    await note.deleteOne();
+
+    res.json({ message: "Note deleted" });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { uploadNote, getNotesForCourse, downloadNote, deleteNote };
